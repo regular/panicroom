@@ -29,10 +29,29 @@ db.open("./lrdb-totinker.lcat", function (error) {
     , function (error, rows) {
         if (error) throw error;
         //console.log(rows);
+        var rowCount = rows.length;
+        var totalSize = 0;
+        var existingPaths = [];
         for (var i=0; i < rows.length; ++i) {
             var r = rows[i];
             var path = r.absolutePath + r.pathFromRoot + r.lc_idx_filename;
-            console.log(stars(r.rating), "|", flag(r.pick), "|", path);
+            r.path = path;
+            
+            (function(r, finish) {
+                fs.stat(r.path, function(err, stat) {
+                    if (stat) {
+                        totalSize += stat.size;
+                        existingPaths.push(r.path);
+                    }
+                    console.log(stars(r.rating), "|", flag(r.pick), "|", err ? "!": " ", r.path);                
+                    if (--rowCount == 0) {
+                        finish();
+                    }
+                });
+            })(r, function() {
+                console.log("Processed",rows.length, "images. Total size is", totalSize);      
+                console.log(existingPaths);
+            });
         }
         db.close(function(error) {
             if (error) {
