@@ -1,4 +1,4 @@
-** panicroom is a backup tool for Adobe Lightroom **
+**panicroom is a backup tool for Adobe Lightroom**
 
 This is work in progress
 
