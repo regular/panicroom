@@ -5,7 +5,7 @@ This is work in progress
 ## PURPOSE
 
 I tend to not backup my raw images as often as I should. One of the reasons is the massive amount of data that has to be moved to backup a large collection of images. To make backups faster, I could start deleting photos from the library. However I'd like to stick with my policy of never deleting any frame I ever shot.
-A solution would be to only backup the 'good' photos. If the other's are eventually lost, I would probably be able to get over it. Some day.
+A solution would be to only backup the 'good' photos. If the others are eventually lost, I would probably be able to get over it. Some day.
 
 ## TODO
 
