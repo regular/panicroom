@@ -7,10 +7,10 @@ var sys    = require('sys'),
     cli = require('cli');
 
 cli.parse({
-    minRating:   ['r', 'minimum rating', "number", 0],
+    minRating:   ['r', 'minimum rating', "number", undefined],
     rootFolder:  [false, "only process photos stored in this root folder", "path", undefined],
-    unpicked:    ['u', 'include unpicked'],
-    rejected:    ['x', 'include rejected']
+    unpicked:    ['u', 'exclude unpicked and rejected'],
+    rejected:    ['x', 'exclude rejected']
 }, ["listroots", "backup"]);
 
 function stars(rating) {
@@ -52,50 +52,80 @@ function getRootFolders(db, finish) {
     });
 }
 
-function getMasterFiles(db, rootFolders, finish) {
-    var query = fs.readFileSync('./query.sql').toString();
-    
-    db.execute( 
-        query
-      , []
-      , function (error, rows) {
-          if (error) {
-              finish(error, null);
-              return;
-          }
-          var rowCount = rows.length;
-          var totalSize = 0;
-          var existingPaths = [];
-          for (var i=0; i < rows.length; ++i) {
-              var r = rows[i];
-              var path = r.absolutePath + r.pathFromRoot + r.lc_idx_filename;
-              r.path = path;
-
-              (function(r, finish) {
-                  fs.stat(r.path, function(err, stat) {
-                      if (stat) {
-                          totalSize += stat.size;
-                          existingPaths.push(r.path);
-                      }
-                      console.log(stars(r.rating), "|", flag(r.pick), "|", err ? "!": " ", r.path);                
-                      if (--rowCount == 0) {
-                          finish();
-                      }
-                  });
-              })(r, function() {
-                  var result = {
-                        rows: rows
-                      , totalSize: totalSize
-                      , existingPaths: existingPaths
-                  };
-                  finish(null, result);
-              });
-          }
+function getMasterFiles(db, rootFolders, finish, minFlag, minRating) {
+    var sql = fs.readFileSync('./query.sql').toString();
+ 
+    db.prepare(sql, function (error, statement) {
+        if (error) {
+            finish(error, null);
+            return;
         }
-    );
+
+        // Fill in the placeholders
+        statement.bindArray([], function () {
+            statement.fetchAll(function (error, rows) {
+                if (error) {
+                    finish(error, null);
+                    return;
+                }
+                var rowCount = rows.length;
+                var totalSize = 0;
+                var existingPaths = [];
+                var count = 0;
+                for (var i=0; i < rows.length; ++i) {
+                    var r = rows[i];
+                    if (!r.rating) r.rating = 0;
+                    if (!r.pick) r.pick = 0;
+                    
+                    var path = r.absolutePath + r.pathFromRoot + r.lc_idx_filename;
+                    r.path = path;
+
+                    (function(r, finish) {
+                        
+                        var include = r.rating>0 || r.pick>0;
+                        if (include && minFlag != undefined) {
+                            include = r.pick >= minFlag;
+                        }
+                        if (include && minRating != undefined) {
+                            include = r.rating >= minRating;
+                        }
+                        
+                        if ( include ) {
+                            count++;
+                            fs.stat(r.path, function(err, stat) {
+                                if (stat) {
+                                    totalSize += stat.size;
+                                    existingPaths.push(r.path);
+                                }
+                                console.log(stars(r.rating), "|", flag(r.pick), "|", err ? "!": " ", r.path);                
+                            
+                                if (--rowCount == 0) {
+                                    finish();
+                                }
+                            });
+                        } else {
+                            if (--rowCount == 0) {
+                                finish();
+                            }
+                        }
+                    })(r, function() {
+                        var result = {
+                              count: count
+                            , totalSize: totalSize
+                            , existingPaths: existingPaths
+                        };
+                        finish(null, result);
+                    });
+                }
+                statement.finalize(function (error) {
+                    //console.log("All done!");
+                });
+            });
+        });
+    });     
 }
 
-function backup(catalog, callback) {
+function backup(catalog, callback, conditions) {
     var db = new sqlite.Database();
     
     function finish(err, result) {
@@ -122,7 +152,10 @@ function backup(catalog, callback) {
                   } else {
                       finish(err, result);
                   }
-              });  
+              }
+              , conditions.minFlag
+              , conditions.minRating
+              );  
           }
       });
   });
@@ -151,13 +184,22 @@ cli.main(function (args, options) {
             });
         });
     } else {
+        var conditions = {
+            minRating: options.minRating,
+            minFlag: undefined
+        };
+        if (options.unpicked) conditions.minFlag = 1;
+        if (options.rejected) conditions.minFlag = 0;
+
         backup(catalog, function(err, result) {
             if (err) {
                 cli.fatal(err);
             } else {
-                console.log(JSON.stringify(result.existingPaths));     
-                console.log("Processed "+ result.rows.length + " images. Total size of available files is " + result.totalSize);      
+                //console.log(JSON.stringify(result.existingPaths));     
+                console.log("Processed "+ result.count + " images. Total size of available files is " + result.totalSize / (1024*1024*1024)+" GB");      
             }
-        });
+        }
+        , conditions
+        );
     }
 });
